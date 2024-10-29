@@ -8,6 +8,7 @@ Test cases can be run with the following:
 
 import os
 import logging
+from service import talisman
 from unittest import TestCase
 from tests.factories import AccountFactory
 from service.common import status  # HTTP Status Codes
@@ -19,6 +20,8 @@ DATABASE_URI = os.getenv(
 )
 
 BASE_URL = "/accounts"
+
+HTTPS_ENVIRON = {"wsgi.url_scheme": "https"}
 
 
 ######################################################################
@@ -34,6 +37,7 @@ class TestAccountService(TestCase):
         app.config["DEBUG"] = False
         app.config["SQLALCHEMY_DATABASE_URI"] = DATABASE_URI
         app.logger.setLevel(logging.CRITICAL)
+        talisman.force_https = False
         init_db(app)
 
     @classmethod
@@ -180,3 +184,24 @@ class TestAccountService(TestCase):
 
         find_response = self.client.get(BASE_URL + "/" + test_account_id)
         self.assertEqual(find_response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_headers(self):
+        """It should have the correct headers"""
+        response = self.client.get("/", environ_overrides=HTTPS_ENVIRON)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        headers = {
+            "X-Frame-Options": "SAMEORIGIN",
+            "X-Content-Type-Options": "nosniff",
+            "Content-Security-Policy": "default-src 'self'; object-src 'none'",
+            "Referrer-Policy": "strict-origin-when-cross-origin",
+        }
+        print("response ", response)
+        print("headers ", response.headers)
+        for key, value in headers.items():
+            self.assertEqual(response.headers.get(key), value)
+
+    def test_cross_origin(self):
+        """It should have CORS enabled"""
+        response = self.client.get("/", environ_overrides=HTTPS_ENVIRON)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "*")
